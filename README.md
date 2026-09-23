@@ -1,4 +1,4 @@
-| `compare <ours.ugd> <other.ugd> [--input <dump>]` | report where two game databases agree and differ; recipes are matched whatever the item order or wording (plurals, "&", a more specific item); with `--input`, weigh each differing monster pick by ACE's damage numbers and say why a recipe is not found |# openac-gamedata
+# openac-gamedata
 
 Generates a VTank-format game database, `gameinfodb.ugd`, from the open ACE
 world database. The MossTank plugin for the OpenAC client reads this file to
@@ -27,7 +27,7 @@ Other commands:
 |---|---|
 | `fetch` | only download and verify the pinned input |
 | `build --input <dump.sql or .zip> --output <file>` | build from another dump |
-| `compare <ours.ugd> <other.ugd> [--input <dump>]` | report where two game databases agree and differ; with `--input`, weigh each differing monster pick by ACE's damage numbers |
+| `compare <ours.ugd> <other.ugd> [--input <dump>]` | report where two game databases agree and differ; recipes are matched whatever the item order or wording (plurals, "&", a more specific item); with `--input`, weigh each differing monster pick by ACE's damage numbers and say why a recipe is not found |
 | `show <dump> <name or class id>` | print a weenie's properties, sources and recipes |
 
 To move to a newer ACE release, update `ace-world.json` (release, asset,
