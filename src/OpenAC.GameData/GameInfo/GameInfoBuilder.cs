@@ -26,6 +26,9 @@ internal static class GameInfoBuilder
 
         AmmunitionTable.Build(world, database);
         MonsterTables.Build(world, database);
+        ItemTables.Build(world, database);
+        SpellTables.Build(world, database);
+        CraftTable.Build(world, database);
 
         // Tables not generated yet are still written, empty, so a reader that
         // expects every table finds it.

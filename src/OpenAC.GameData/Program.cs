@@ -121,6 +121,7 @@ internal static class Program
             Console.WriteLine($"{w} type={w.Type} placements={world.PlacementsOf(w.ClassId)} sold={world.Sources.IsSold(w.ClassId)} given={world.Sources.IsGiven(w.ClassId)} recipes={world.Sources.MadeBy(w.ClassId).Count}");
             Console.WriteLine("  int   " + string.Join(" ", w.Ints.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}")));
             Console.WriteLine("  float " + string.Join(" ", w.Floats.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value:G6}")));
+            Console.WriteLine("  did   " + string.Join(" ", w.DataIds.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}")));
             Console.WriteLine("  bool  " + string.Join(" ", w.Bools.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}")));
             Console.WriteLine("  attr  " + string.Join(" ", w.Attributes.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value.Base}")));
             Console.WriteLine("  vital " + string.Join(" ", w.Vitals.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value.Base}")));

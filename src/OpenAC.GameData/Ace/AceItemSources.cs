@@ -15,7 +15,7 @@ internal sealed record AceRecipe(
     string FailMessage);
 
 /// <summary>One way to use a recipe: this source item on this target item.</summary>
-internal readonly record struct AceCookBookEntry(uint RecipeId, uint SourceClassId, uint TargetClassId);
+internal readonly record struct AceCookBookEntry(uint Id, uint RecipeId, uint SourceClassId, uint TargetClassId);
 
 /// <summary>The cheapest way an item can be had, cheapest first.</summary>
 internal enum AceAcquisition
@@ -212,9 +212,9 @@ internal sealed class AceItemSources
 
         var cookBook = new List<AceCookBookEntry>();
         SqlTable book = tables["cook_book"];
-        int recipeId = book.Column("recipe_Id"), source = book.Column("source_W_C_I_D"), target = book.Column("target_W_C_I_D");
+        int entryId = book.Column("id"), recipeId = book.Column("recipe_Id"), source = book.Column("source_W_C_I_D"), target = book.Column("target_W_C_I_D");
         foreach (object?[] row in book.Rows)
-            cookBook.Add(new AceCookBookEntry(U(row[recipeId]), U(row[source]), U(row[target])));
+            cookBook.Add(new AceCookBookEntry(U(row[entryId]), U(row[recipeId]), U(row[source]), U(row[target])));
 
         return new AceItemSources(sold, soldForCurrency, given, found, wielded, recipes, cookBook);
     }

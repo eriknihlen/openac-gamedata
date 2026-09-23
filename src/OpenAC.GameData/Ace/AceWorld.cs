@@ -58,14 +58,23 @@ internal sealed class AceWorld
         "weenie_properties_emote_action",
         "recipe",
         "cook_book",
+        "spell",
     ];
 
-    private AceWorld(Dictionary<uint, AceWeenie> weenies, Dictionary<uint, int> placements, AceItemSources sources)
+    private AceWorld(
+        Dictionary<uint, AceWeenie> weenies,
+        Dictionary<uint, int> placements,
+        AceItemSources sources,
+        Dictionary<uint, AceSpell> spells)
     {
+        Spells = spells;
         Weenies = weenies;
         Placements = placements;
         Sources = sources;
     }
+
+    /// <summary>ACE's spell table, by spell id.</summary>
+    public IReadOnlyDictionary<uint, AceSpell> Spells { get; }
 
     /// <summary>Where items come from: vendors, NPC gifts and recipes.</summary>
     public AceItemSources Sources { get; }
@@ -111,7 +120,7 @@ internal sealed class AceWorld
         foreach (object?[] row in generators.Rows)
             Count(placements, U(row[generated]));
 
-        return new AceWorld(weenies, placements, AceItemSources.FromTables(tables, weenies));
+        return new AceWorld(weenies, placements, AceItemSources.FromTables(tables, weenies), AceSpell.FromTable(tables["spell"]));
     }
 
     private static void ReadKeyed(

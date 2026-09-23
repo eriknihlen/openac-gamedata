@@ -35,7 +35,16 @@ public class GameInfoOutputTests
             .Weenie(10, AceProperty.WeenieType.Ammunition, "Fire Arrow")
             .Int(10, AceProperty.Int.AmmoType, 1).Int(10, AceProperty.Int.DamageType, 0x10)
             .Int(10, AceProperty.Int.Damage, 12).Float(10, AceProperty.Float.DamageVariance, 0.25)
-            .SoldBy(900, 10);
+            .SoldBy(900, 10)
+            .Weenie(20, 28, "Healing Kit").Int(20, 89, 2).Int(20, 90, 10).SoldBy(900, 20)
+            .Weenie(21, 4, "Iron Phial of Fester")
+            .Int(21, AceProperty.Int.WieldRequirements, 2).Int(21, AceProperty.Int.WieldSkillType, 38)
+            .Int(21, AceProperty.Int.WieldDifficulty, 75).Int(21, 106, 100).DataId(21, 55, 172).Float(21, 156, 1.0).SoldBy(900, 21)
+            .Weenie(22, 38, "Gold Medal of Vigor").Int(22, 280, 7).GivenBy(1, 22)
+            .DrainSpell(1237, "Drain Health Other I", 0.25, -1, 60)
+            .MartyrSpell(3818, "Curse of Raven Fury", 0.5, 2)
+            .Weenie(30, 1, "Wrapped Bundle of Fire Arrowheads").Weenie(31, 1, "Wrapped Bundle of Arrowshafts")
+            .Recipe(500, makes: 10, source: 30, target: 31, skill: 37, difficulty: 90);
         return dump.World();
     }
 
@@ -75,6 +84,21 @@ public class GameInfoOutputTests
         VtankAmmunitionOption arrow = Assert.Single(Generated().AmmunitionOptions);
 
         Assert.Equal(new VtankAmmunitionOption("Fire Arrow", 5, 0, 6, 105, 0, 0u, 0), arrow);
+    }
+
+    [Fact]
+    public void The_reader_sees_kits_grenades_drains_martyrs_and_recipes()
+    {
+        VtankGameInfoDatabase db = Generated();
+
+        Assert.Equal(new VtankHealKit("Healing Kit", 1.0, 10, 1), Assert.Single(db.HealKits));
+        Assert.Equal(new VtankGrenadeOption("Iron Phial of Fester", 2, 38, 75, 172u, 100), Assert.Single(db.GrenadeOptions));
+        Assert.Equal(new VtankDrainSpellOption(1237u, 500, 0.25, 30, 2), Assert.Single(db.DrainSpellOptions));
+        Assert.Equal(new VtankMartyrSpellOption(3818u, 2850, 0.5, 2), Assert.Single(db.MartyrSpellOptions));
+        VtankCraftRecipe recipe = Assert.Single(db.Crafts.ForResult("Fire Arrow"));
+        Assert.Equal(
+            ("Wrapped Bundle of Fire Arrowheads", "Wrapped Bundle of Arrowshafts", 37u, 90),
+            (recipe.FirstItem, recipe.SecondItem, recipe.RequiredSkill, recipe.Difficulty));
     }
 
     [Fact]

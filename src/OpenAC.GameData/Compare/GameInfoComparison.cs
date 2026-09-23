@@ -32,6 +32,12 @@ internal static class GameInfoComparison
         MonsterDamage(sb, ours, theirs, damageTaken);
         Immunities(sb, ours, theirs);
         Ammunition(sb, ours, theirs);
+        KeyedRows(sb, ours, theirs, "HealKits", [0]);
+        KeyedRows(sb, ours, theirs, "GrenadeOptions", [0]);
+        KeyedRows(sb, ours, theirs, "DrainSpellOptions", [0]);
+        KeyedRows(sb, ours, theirs, "MartyrSpellOptions", [0]);
+        KeyedRows(sb, ours, theirs, "CooldownIDs", [0]);
+        KeyedRows(sb, ours, theirs, "CraftInteractions", [0, 1, 2], ignore: [8]);
         return sb.ToString();
     }
 
@@ -287,6 +293,48 @@ internal static class GameInfoComparison
         }
         sb.AppendLine(CultureInfo.InvariantCulture, $"- picks agree for {cases - pickDiffs.Count} of {cases} cases ({label})");
         Examples(sb, "picks differ (ours vs theirs)", pickDiffs);
+    }
+
+    /// <summary>
+    /// Rows matched by their key columns (compared without case): how many
+    /// match, and for matched rows which other columns differ.
+    /// </summary>
+    private static void KeyedRows(
+        StringBuilder sb,
+        VtankDatabase ours,
+        VtankDatabase theirs,
+        string table,
+        int[] key,
+        int[]? ignore = null)
+    {
+        static Dictionary<string, VtankRow> Read(VtankDatabase db, string table, int[] key) =>
+            (db.Find(table)?.Rows ?? [])
+                .GroupBy(r => string.Join(" + ", key.Select(k => r.Cells[k].AsString())), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, VtankRow> a = Read(ours, table, key), b = Read(theirs, table, key);
+        VtankTable? schema = ours.Find(table) ?? theirs.Find(table);
+        var differences = new List<string>();
+        foreach ((string name, VtankRow row) in b)
+        {
+            if (!a.TryGetValue(name, out VtankRow? mine))
+                continue;
+            var columns = new List<string>();
+            for (int c = 0; c < Math.Min(row.Cells.Count, mine.Cells.Count); c++)
+            {
+                if (key.Contains(c) || (ignore?.Contains(c) ?? false))
+                    continue;
+                if (!string.Equals(mine.Cells[c].AsString(), row.Cells[c].AsString(), StringComparison.OrdinalIgnoreCase))
+                    columns.Add($"{schema!.ColumnNames[c]} {mine.Cells[c].AsString()}/{row.Cells[c].AsString()}");
+            }
+            if (columns.Count > 0)
+                differences.Add($"{name}: {string.Join(", ", columns)}");
+        }
+        string[] missing = b.Keys.Where(k => !a.ContainsKey(k)).ToArray();
+        sb.AppendLine($"## {table}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- rows: ours {a.Count}, theirs {b.Count}; theirs missing from ours {missing.Length}; in both and equal {b.Count - missing.Length - differences.Count}");
+        Examples(sb, "theirs missing from ours", missing);
+        Examples(sb, "differ (ours/theirs)", differences);
+        sb.AppendLine();
     }
 
     private static void Examples(StringBuilder sb, string label, IEnumerable<string> items)

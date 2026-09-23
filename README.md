@@ -2,8 +2,8 @@
 
 Generates a VTank-format game database, `gameinfodb.ugd`, from the open ACE
 world database. The MossTank plugin for the OpenAC client reads this file to
-choose ammunition, the damage element to use on each monster, and (later)
-heal kits, grenades, drain spells and crafting recipes.
+choose ammunition, the damage element to use on each monster, heal kits,
+grenades, drain and martyr spells, and crafting recipes.
 
 License: AGPL-3.0 (see `LICENSE` and `NOTICE`). The generated file is derived
 from ACE's AGPL world data and is AGPL-3.0 too.
@@ -44,8 +44,13 @@ sha256, published).
 | `MonsterDamageOverrides` | done | a monster's own order, when following its species' order could cost more than 10% |
 | `MonsterImmunities` | done | mask 3 for creatures immune to non-projectile magic |
 | `AmmunitionOptions` | done | every arrow, bolt and atlatl dart a player can get |
-| `HealKits`, `GrenadeOptions`, `DrainSpellOptions`, `MartyrSpellOptions`, `CooldownIDs`, `SpellQualityOverrides` | empty for now | phase 2 |
-| `CraftInteractions` | empty for now | phase 3 |
+| `HealKits` | done | every healing, stamina and mana kit: restore bonus, skill bonus, vital (health 1, stamina 2, mana 3) |
+| `GrenadeOptions` | done | thrown items that cast their spell every time they land (phials): wield requirement, spell, spellcraft |
+| `DrainSpellOptions` | done | health drains (target to caster) from ACE's spell table |
+| `MartyrSpellOptions` | done | health martyr spells (caster's health spent to hurt the target) from ACE's spell table |
+| `CooldownIDs` | done | every item with a shared use timer |
+| `CraftInteractions` | done | every use of one item on another that makes a new item, from ACE's recipes |
+| `SpellQualityOverrides` | empty on purpose | VTank's own corrections to its spell ranking; nothing in the world data says what they should be, and MossTank does not read the table |
 
 ### Monster rules
 
@@ -84,6 +89,32 @@ sha256, published).
   class id. Ammunition that exists only as a creature's own wielded equipment
   is left out.
 
+### Item, spell and recipe rules
+
+- **Which weenie stands for a name** (kits, grenades, cooldown items): the
+  easiest to have, then the lowest class id; creature-only gear is left out.
+- **HealKits**: restore bonus is the kit's heal-kit modifier (1 when it has
+  none), skill bonus its boost value, the vital from what it boosts.
+- **GrenadeOptions**: thrown items with a spell, a spellcraft and a spell rate
+  of 1. A thrown weapon that only sometimes casts is a weapon, not a grenade.
+- **CooldownIDs**: an item's shared cooldown number, written as the signed
+  16-bit spell id the game uses for the cooldown (`number - 32768`).
+- **DrainSpellOptions**: spells whose source is the target's health and whose
+  destination is the caster's. Drain factor = the spell's proportion; result
+  multiplier = 1 - its loss percent; the transfer cap limits both what is taken
+  and what is given, so the most taken is `cap / max(1, multiplier)`.
+- **MartyrSpellOptions**: health spells with a drain percentage (the share of
+  the caster's own health spent) and a damage ratio (the result multiplier).
+- **Cast times** (both spell tables): the cast times known from play for
+  these spells. A spell not among them gets an estimate: 500 ms per level (its
+  rank by strength within the table), at most 2.5 s. The world data has none.
+- **CraftInteractions**: one row per cook-book entry whose recipe makes a named
+  item (the item used first, the item it is used on second, as the game only
+  accepts that order). Difficulty is the recipe's own: the skill at which the
+  craft succeeds half the time. The row id is the cook-book entry's id. Recipes
+  that only change the target (tinkering, dyeing) make nothing new and are
+  left out.
+
 ## Checking the output
 
 `tests/` builds a small world database in memory and reads the generated file
@@ -95,3 +126,8 @@ dotnet run --project src/OpenAC.GameData -c Release -- compare out/gameinfodb.ug
 ```
 
 Never commit or publish another game database; compare against it locally only.
+
+Note for MossTank: its update check asks VTank's online service for the
+changes since the file's `DBLastUpdateTime` and merges them into the file it
+loaded, so with this file in place, rows the service changed after the ACE
+release date are merged in on top.

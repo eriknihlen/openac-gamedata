@@ -43,6 +43,11 @@ internal sealed class TestDump
             "success_Message", "fail_W_C_I_D", "fail_Amount", "fail_Message",
         ],
         ["cook_book"] = ["id", "recipe_Id", "source_W_C_I_D", "target_W_C_I_D", "last_Modified"],
+        ["spell"] =
+        [
+            "id", "name", "e_Type", "drain_Percentage", "damage_Ratio", "source", "destination",
+            "proportion", "loss_Percent", "transfer_Cap", "transfer_Bitfield",
+        ],
     };
 
     private readonly Dictionary<string, List<string>> _rows = Columns.Keys.ToDictionary(k => k, _ => new List<string>());
@@ -112,6 +117,16 @@ internal sealed class TestDump
         Add("recipe", id, 0, skill, difficulty, 0, makes, 100, Quote("made"), 0, 0, Quote("failed"));
         return Add("cook_book", _nextId++, id, source, target, Quote("2026-01-01 00:00:00"));
     }
+
+    /// <summary>A health drain: takes a share of the target's health, capped, and gives the caster 1 - loss of it.</summary>
+    public TestDump DrainSpell(uint id, string name, double proportion, double loss, int cap) =>
+        Add("spell", id, Quote(name), "NULL", "NULL", "NULL", 2, 2, R(proportion), R(loss), cap, 6);
+
+    /// <summary>A health martyr spell: spends a share of the caster's health, the target takes ratio times that.</summary>
+    public TestDump MartyrSpell(uint id, string name, double drain, double ratio, int damageType = 128) =>
+        Add("spell", id, Quote(name), damageType, R(drain), R(ratio), "NULL", "NULL", "NULL", "NULL", "NULL", "NULL");
+
+    private static string R(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
     public string Sql()
     {
