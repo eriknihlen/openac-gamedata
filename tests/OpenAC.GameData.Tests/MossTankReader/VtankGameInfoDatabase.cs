@@ -1,0 +1,483 @@
+// This file is copied from MossTank (https://github.com/eriknihlen/openac-mosstank,
+// src/AcDream.Plugins.MossTank/VtankGameInfoDatabase.cs at commit 1c97f58, plus
+// the MonsterDamageType enum from MonsterRules.cs and the VtankAmmunitionOption
+// record from VtankAmmunitionDatabase.cs and the craft types from
+// VtankCraftDatabase.cs), which is released under the MIT License:
+//
+// Copyright (c) 2026 Erik Nihlén and OpenAC contributors
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+// Changes from the original: the namespace; the loading from plugin storage and
+// from the embedded default file are left out (they need the plugin host), so
+// only Parse remains. This is the reader the generated file must satisfy.
+
+using OpenAC.GameData.Vtank;
+
+namespace OpenAC.GameData.Tests.MossTankReader;
+
+internal enum MonsterDamageType
+{
+    Auto = 0,
+    Slash,
+    Pierce,
+    Bludgeon,
+    Cold,
+    Fire,
+    Acid,
+    Electric,
+    Nether,
+    VoidBasic,
+    DrainAuto,
+    Harm,
+    None,
+    PlayerAuto,
+    Prismatic,
+    Random,
+    Fists,
+    Physical,
+}
+
+internal readonly record struct VtankAmmunitionOption(
+    string Name,
+    int LauncherType,
+    int WieldRequirement,
+    int Element,
+    int Quality,
+    int SpecialMask,
+    uint SecondarySkill,
+    int SecondaryRequirement);
+
+
+/// <summary>One <c>SpeciesMembers</c> row: monster name -&gt; species + max HP.</summary>
+internal readonly record struct VtankSpeciesMember(int Species, int MaximumHealth);
+
+/// <summary>One <c>HealKits</c> row.</summary>
+internal readonly record struct VtankHealKit(
+    string Name,
+    double RestoreBonus,
+    int SkillBonus,
+    int Vital);
+
+/// <summary>One <c>GrenadeOptions</c> row.</summary>
+internal readonly record struct VtankGrenadeOption(
+    string Name,
+    int WieldRequirementType,
+    int WieldRequirementAttribute,
+    int WieldRequirementValue,
+    uint SpellId,
+    int Spellcraft);
+
+/// <summary>One <c>DrainSpellOptions</c> row.</summary>
+internal readonly record struct VtankDrainSpellOption(
+    uint SpellId,
+    int CastTimeMilliseconds,
+    double EnemyDrainFactor,
+    int EnemyDrainMaximumPoints,
+    double ResultMultiplier);
+
+/// <summary>One <c>MartyrSpellOptions</c> row.</summary>
+internal readonly record struct VtankMartyrSpellOption(
+    uint SpellId,
+    int CastTimeMilliseconds,
+    double SelfDrainFactor,
+    double ResultMultiplier);
+
+internal sealed class VtankGameInfoDatabase
+{
+    public const string FileName = "gameinfodb.ugd";
+
+    private static readonly MonsterDamageType[] NoElements = [];
+
+    /// <summary>
+    /// No database. Every lookup answers the way the reference client answers
+    /// with an unloaded one.
+    /// </summary>
+    public static VtankGameInfoDatabase Empty { get; } = new();
+
+    private VtankGameInfoDatabase()
+    {
+        MonsterDamageOverrides =
+            new Dictionary<string, IReadOnlyList<MonsterDamageType>>(
+                StringComparer.OrdinalIgnoreCase);
+        SpeciesMembers = new Dictionary<string, VtankSpeciesMember>(
+            StringComparer.OrdinalIgnoreCase);
+        SpeciesDamages = new Dictionary<int, IReadOnlyList<MonsterDamageType>>();
+        AmmunitionOptions = [];
+        HealKits = [];
+        GrenadeOptions = [];
+        DrainSpellOptions = [];
+        MartyrSpellOptions = [];
+    }
+
+    /// <summary>Is there a database at all?</summary>
+    public bool IsLoaded { get; private init; }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<MonsterDamageType>>
+        MonsterDamageOverrides { get; private init; }
+
+    public IReadOnlyDictionary<string, VtankSpeciesMember> SpeciesMembers
+    { get; private init; }
+
+    /// <summary>Monster name -&gt; immunity mask.</summary>
+    public IReadOnlyDictionary<string, int> MonsterImmunities { get; private init; }
+        = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The bit that says a monster cannot be affected by magic.</summary>
+    public const int ImmuneToMagicMask = 2;
+
+    /// <summary>
+    /// The species column of the monster's <c>SpeciesMembers</c> row, or
+    /// <c>-1</c> when there is no database or no row for the name.
+    /// </summary>
+    public int SpeciesOf(string? monsterName) =>
+        Member(monsterName) is { } member ? member.Species : -1;
+
+    /// <summary>
+    /// The maximum-health column of the monster's <c>SpeciesMembers</c> row,
+    /// or <c>-1</c> when there is no database or no row for the name. This is
+    /// the only source a monster's maximum health has: the client is never
+    /// told it.
+    /// </summary>
+    public int MaximumHealthOf(string? monsterName) =>
+        Member(monsterName) is { } member ? member.MaximumHealth : -1;
+
+    /// <summary>Is the monster listed as unaffectable by magic?</summary>
+    public bool IsImmuneToMagic(string? monsterName) =>
+        IsLoaded
+        && !string.IsNullOrWhiteSpace(monsterName)
+        && MonsterImmunities.TryGetValue(monsterName, out int mask)
+        && (mask & ImmuneToMagicMask) != 0;
+
+    private VtankSpeciesMember? Member(string? monsterName) =>
+        IsLoaded
+        && !string.IsNullOrWhiteSpace(monsterName)
+        && SpeciesMembers.TryGetValue(monsterName, out VtankSpeciesMember member)
+            ? member
+            : null;
+
+    public IReadOnlyDictionary<int, IReadOnlyList<MonsterDamageType>> SpeciesDamages
+    { get; private init; }
+
+    public IReadOnlyList<VtankAmmunitionOption> AmmunitionOptions { get; private init; }
+
+    public IReadOnlyList<VtankHealKit> HealKits { get; private init; }
+
+    public IReadOnlyList<VtankGrenadeOption> GrenadeOptions { get; private init; }
+
+    public IReadOnlyList<VtankDrainSpellOption> DrainSpellOptions { get; private init; }
+
+    public IReadOnlyList<VtankMartyrSpellOption> MartyrSpellOptions { get; private init; }
+
+    /// <summary>The <c>CraftInteractions</c> table: every recipe the crafter knows.</summary>
+    public VtankCraftDatabase Crafts { get; private init; } = VtankCraftDatabase.Empty;
+
+    /// <summary>
+    /// When the service last changed what this database holds, in seconds
+    /// since 1970, or null when it does not say.
+    /// </summary>
+    public int? LastUpdateTime { get; private init; }
+
+    /// <summary>The database's own version number, or null when it does not say.</summary>
+    public int? Version { get; private init; }
+
+    public static VtankGameInfoDatabase Parse(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        VtankDatabase database = VtankDatabase.Parse(text);
+        return new VtankGameInfoDatabase
+        {
+            IsLoaded = true,
+            LastUpdateTime = ReadCellInt(database, "DBLastUpdateTime", 1),
+            Version = ReadCellInt(database, "DBVersion", 0),
+            MonsterDamageOverrides = ReadNamedElements(database, "MonsterDamageOverrides"),
+            SpeciesMembers = ReadSpeciesMembers(database),
+            MonsterImmunities = ReadMonsterImmunities(database),
+            SpeciesDamages = ReadSpeciesDamages(database),
+            AmmunitionOptions = ReadAmmunitionOptions(database),
+            HealKits = ReadHealKits(database),
+            GrenadeOptions = ReadGrenadeOptions(database),
+            DrainSpellOptions = ReadDrainSpellOptions(database),
+            MartyrSpellOptions = ReadMartyrSpellOptions(database),
+            Crafts = ReadCraftInteractions(database),
+        };
+    }
+
+    public IReadOnlyList<MonsterDamageType> DamagePreferences(string? monsterName)
+    {
+        if (!IsLoaded || string.IsNullOrWhiteSpace(monsterName))
+            return NoElements;
+        if (MonsterDamageOverrides.TryGetValue(
+                monsterName,
+                out IReadOnlyList<MonsterDamageType>? exact))
+        {
+            return exact;
+        }
+        if (SpeciesMembers.TryGetValue(monsterName, out VtankSpeciesMember member)
+            && SpeciesDamages.TryGetValue(
+                member.Species,
+                out IReadOnlyList<MonsterDamageType>? species))
+        {
+            return species;
+        }
+        return NoElements;
+    }
+
+    private static int? ReadCellInt(VtankDatabase database, string tableName, int column)
+    {
+        VtankTable? table = database.Find(tableName);
+        return table is { Rows.Count: > 0 } && table.Rows[0].Cells.Count > column
+            ? table.Rows[0].Cells[column].AsInt()
+            : null;
+    }
+
+    private static Dictionary<string, IReadOnlyList<MonsterDamageType>> ReadNamedElements(
+        VtankDatabase database,
+        string tableName)
+    {
+        var result = new Dictionary<string, IReadOnlyList<MonsterDamageType>>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (VtankRow row in Rows(database, tableName, 2))
+            result[row.Cells[0].AsString()] = VtankDamageElements.Parse(row.Cells[1].AsString());
+        return result;
+    }
+
+    private static Dictionary<string, VtankSpeciesMember> ReadSpeciesMembers(
+        VtankDatabase database)
+    {
+        var result = new Dictionary<string, VtankSpeciesMember>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (VtankRow row in Rows(database, "SpeciesMembers", 3))
+        {
+            result[row.Cells[0].AsString()] = new VtankSpeciesMember(
+                row.Cells[1].AsInt(),
+                row.Cells[2].AsInt());
+        }
+        return result;
+    }
+
+    private static Dictionary<string, int> ReadMonsterImmunities(
+        VtankDatabase database)
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (VtankRow row in Rows(database, "MonsterImmunities", 2))
+            result[row.Cells[0].AsString()] = row.Cells[1].AsInt();
+        return result;
+    }
+
+    private static Dictionary<int, IReadOnlyList<MonsterDamageType>> ReadSpeciesDamages(
+        VtankDatabase database)
+    {
+        var result = new Dictionary<int, IReadOnlyList<MonsterDamageType>>();
+        foreach (VtankRow row in Rows(database, "SpeciesDamages", 2))
+            result[row.Cells[0].AsInt()] = VtankDamageElements.Parse(row.Cells[1].AsString());
+        return result;
+    }
+
+    private static List<VtankAmmunitionOption> ReadAmmunitionOptions(VtankDatabase database)
+    {
+        var result = new List<VtankAmmunitionOption>();
+        foreach (VtankRow row in Rows(database, "AmmunitionOptions", 8))
+        {
+            result.Add(new VtankAmmunitionOption(
+                row.Cells[0].AsString(),
+                row.Cells[1].AsInt(),
+                row.Cells[2].AsInt(),
+                row.Cells[3].AsInt(),
+                row.Cells[4].AsInt(),
+                row.Cells[5].AsInt(),
+                unchecked((uint)row.Cells[6].AsInt()),
+                row.Cells[7].AsInt()));
+        }
+        return result;
+    }
+
+    private static List<VtankHealKit> ReadHealKits(VtankDatabase database)
+    {
+        var result = new List<VtankHealKit>();
+        foreach (VtankRow row in Rows(database, "HealKits", 4))
+        {
+            result.Add(new VtankHealKit(
+                row.Cells[0].AsString(),
+                row.Cells[1].AsDouble(),
+                row.Cells[2].AsInt(),
+                row.Cells[3].AsInt()));
+        }
+        return result;
+    }
+
+    private static List<VtankGrenadeOption> ReadGrenadeOptions(VtankDatabase database)
+    {
+        var result = new List<VtankGrenadeOption>();
+        foreach (VtankRow row in Rows(database, "GrenadeOptions", 6))
+        {
+            result.Add(new VtankGrenadeOption(
+                row.Cells[0].AsString(),
+                row.Cells[1].AsInt(),
+                row.Cells[2].AsInt(),
+                row.Cells[3].AsInt(),
+                unchecked((uint)row.Cells[4].AsInt()),
+                row.Cells[5].AsInt()));
+        }
+        return result;
+    }
+
+    private static List<VtankDrainSpellOption> ReadDrainSpellOptions(VtankDatabase database)
+    {
+        var result = new List<VtankDrainSpellOption>();
+        foreach (VtankRow row in Rows(database, "DrainSpellOptions", 5))
+        {
+            result.Add(new VtankDrainSpellOption(
+                unchecked((uint)row.Cells[0].AsInt()),
+                row.Cells[1].AsInt(),
+                row.Cells[2].AsDouble(),
+                row.Cells[3].AsInt(),
+                row.Cells[4].AsDouble()));
+        }
+        return result;
+    }
+
+    private static List<VtankMartyrSpellOption> ReadMartyrSpellOptions(VtankDatabase database)
+    {
+        var result = new List<VtankMartyrSpellOption>();
+        foreach (VtankRow row in Rows(database, "MartyrSpellOptions", 4))
+        {
+            result.Add(new VtankMartyrSpellOption(
+                unchecked((uint)row.Cells[0].AsInt()),
+                row.Cells[1].AsInt(),
+                row.Cells[2].AsDouble(),
+                row.Cells[3].AsDouble()));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The columns the reference client reads by position: the two items,
+    /// the result, how many it makes, the skill it needs (column 6), the
+    /// difficulty and the row's id. The two message columns are the game's
+    /// own and are not needed.
+    /// </summary>
+    private static VtankCraftDatabase ReadCraftInteractions(VtankDatabase database)
+    {
+        var result = new List<VtankCraftRecipe>();
+        foreach (VtankRow row in Rows(database, "CraftInteractions", 9))
+        {
+            result.Add(new VtankCraftRecipe(
+                row.Cells[0].AsString(),
+                row.Cells[1].AsString(),
+                row.Cells[2].AsString(),
+                row.Cells[3].AsInt(),
+                unchecked((uint)row.Cells[6].AsInt()),
+                row.Cells[7].AsInt(),
+                row.Cells[8].AsInt()));
+        }
+        return result.Count == 0 ? VtankCraftDatabase.Empty : new VtankCraftDatabase(result);
+    }
+
+    private static IEnumerable<VtankRow> Rows(
+        VtankDatabase database,
+        string tableName,
+        int columns)
+    {
+        VtankTable? table = database.Find(tableName);
+        if (table is null)
+            yield break;
+        foreach (VtankRow row in table.Rows)
+        {
+            if (row.Cells.Count >= columns)
+                yield return row;
+        }
+    }
+}
+
+internal static class VtankDamageElements
+{
+    public static IReadOnlyList<MonsterDamageType> Parse(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return [];
+        var result = new List<MonsterDamageType>(7);
+        foreach (Range range in text.AsSpan().Split(';'))
+        {
+            if (!int.TryParse(text.AsSpan()[range], out int raw))
+                continue;
+            MonsterDamageType mapped = raw switch
+            {
+                0 => MonsterDamageType.Pierce,
+                1 => MonsterDamageType.Bludgeon,
+                2 => MonsterDamageType.Slash,
+                3 => MonsterDamageType.Acid,
+                4 => MonsterDamageType.Electric,
+                5 => MonsterDamageType.Cold,
+                6 => MonsterDamageType.Fire,
+                _ => MonsterDamageType.None,
+            };
+            if (mapped != MonsterDamageType.None && !result.Contains(mapped))
+                result.Add(mapped);
+        }
+        return result;
+    }
+}
+
+internal readonly record struct VtankCraftRecipe(
+    string FirstItem,
+    string SecondItem,
+    string ResultItem,
+    int ResultCount,
+    uint RequiredSkill,
+    int Difficulty,
+    int Id);
+
+/// <summary>
+/// The game database's <c>CraftInteractions</c> table: what two items make
+/// when one is used on the other. There is no other source; a database
+/// without the table has no recipes, and nothing is crafted.
+/// </summary>
+internal sealed class VtankCraftDatabase
+{
+    private readonly Dictionary<string, VtankCraftRecipe[]> _byResult;
+
+    public static VtankCraftDatabase Empty { get; } = new([]);
+
+    public VtankCraftDatabase(IReadOnlyList<VtankCraftRecipe> recipes)
+    {
+        ArgumentNullException.ThrowIfNull(recipes);
+        Recipes = recipes;
+        _byResult = recipes
+            .GroupBy(static recipe => recipe.ResultItem, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.OrderBy(recipe => recipe.Id).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Every recipe, in the table's own order.</summary>
+    public IReadOnlyList<VtankCraftRecipe> Recipes { get; }
+
+    public IReadOnlyList<VtankCraftRecipe> ForResult(string resultName)
+    {
+        if (string.IsNullOrWhiteSpace(resultName))
+            return Array.Empty<VtankCraftRecipe>();
+        return _byResult.TryGetValue(
+            resultName.Trim(),
+            out VtankCraftRecipe[]? recipes)
+                ? recipes
+                : Array.Empty<VtankCraftRecipe>();
+    }
+}

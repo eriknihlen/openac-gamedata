@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+**/TestResults/
+
+# Downloaded inputs and generated files
+.cache/
+out/
+
+# IDEs
+.vs/
+.idea/
+*.user
+*.suo

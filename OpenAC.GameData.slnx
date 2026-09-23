@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenAC.GameData/OpenAC.GameData.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenAC.GameData.Tests/OpenAC.GameData.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>openac-gamedata</AssemblyName>
+    <RootNamespace>OpenAC.GameData</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenAC.GameData.Tests" />
+  </ItemGroup>
+</Project>

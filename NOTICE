@@ -1,0 +1,49 @@
+openac-gamedata
+Copyright (C) 2026 Erik Nihlén and OpenAC contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See LICENSE.
+
+-------------------------------------------------------------------------------
+The generated game database (gameinfodb.ugd)
+-------------------------------------------------------------------------------
+
+Every gameinfodb.ugd this program writes is generated from the ACE world
+database published by the ACEmulator project:
+
+  ACE-World-16PY-Patches  https://github.com/ACEmulator/ACE-World-16PY-Patches
+  ACE-World-16PY          https://github.com/ACEmulator/ACE-World-16PY
+
+both licensed under the GNU Affero General Public License v3.0. The generated
+file is a work derived from that data and is distributed under the same
+license, AGPL-3.0. The exact release it was built from is named in
+ace-world.json (repository, release, asset and SHA-256).
+
+Credit and thanks to the ACEmulator team and the many people who collected
+and curated the ACE world data.
+
+The rankings in the file (the ammunition Quality column, the order of each
+damage list, the rule for when a monster gets its own list, the Special
+groups) are this project's own rules, described in README.md.
+
+-------------------------------------------------------------------------------
+Code from MossTank (MIT)
+-------------------------------------------------------------------------------
+
+These files are copied from MossTank (https://github.com/eriknihlen/openac-mosstank),
+released under the MIT License, and keep its copyright and permission notice
+at their top:
+
+  src/OpenAC.GameData/Vtank/VtankTables.cs
+  tests/OpenAC.GameData.Tests/MossTankReader/VtankGameInfoDatabase.cs
+
+-------------------------------------------------------------------------------
+Trademarks
+-------------------------------------------------------------------------------
+
+Asheron's Call is a trademark of its owner. This project is not affiliated with
+or endorsed by it, by the ACEmulator project, or by the author of VTank. The
+file format is read and written for compatibility only; no data from any other
+game database is included.
