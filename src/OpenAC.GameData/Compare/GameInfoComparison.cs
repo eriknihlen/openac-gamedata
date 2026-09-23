@@ -16,6 +16,11 @@ internal static class GameInfoComparison
 
     /// <param name="ours">The generated database.</param>
     /// <param name="theirs">The database to compare with.</param>
+    /// <param name="worldItemNames">
+    /// Optional: every item name in the world data. With it, a recipe of the
+    /// other file that none of ours matches is checked against the items the
+    /// world has at all.
+    /// </param>
     /// <param name="damageTaken">
     /// Optional: for a monster name, the share of a hit of each element (VTank
     /// element number) that reaches it, by the world data. With it, every pick
@@ -24,7 +29,9 @@ internal static class GameInfoComparison
     public static string Report(
         VtankDatabase ours,
         VtankDatabase theirs,
-        Func<string, IReadOnlyDictionary<int, double>?>? damageTaken = null)
+        Func<string, IReadOnlyDictionary<int, double>?>? damageTaken = null,
+        IReadOnlyCollection<string>? worldItemNames = null,
+        IReadOnlyCollection<string>? worldRecipeResults = null)
     {
         var sb = new StringBuilder();
         TableSizes(sb, ours, theirs);
@@ -37,7 +44,7 @@ internal static class GameInfoComparison
         KeyedRows(sb, ours, theirs, "DrainSpellOptions", [0]);
         KeyedRows(sb, ours, theirs, "MartyrSpellOptions", [0]);
         KeyedRows(sb, ours, theirs, "CooldownIDs", [0]);
-        KeyedRows(sb, ours, theirs, "CraftInteractions", [0, 1, 2], ignore: [8]);
+        Crafts(sb, ours, theirs, worldItemNames, worldRecipeResults);
         return sb.ToString();
     }
 
@@ -334,6 +341,85 @@ internal static class GameInfoComparison
         sb.AppendLine(CultureInfo.InvariantCulture, $"- rows: ours {a.Count}, theirs {b.Count}; theirs missing from ours {missing.Length}; in both and equal {b.Count - missing.Length - differences.Count}");
         Examples(sb, "theirs missing from ours", missing);
         Examples(sb, "differ (ours/theirs)", differences);
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Recipes of the other file found among ours whatever the item order and
+    /// however the names are worded (see <see cref="RecipeMatcher"/>); for the
+    /// ones found, how the skill and difficulty compare; for the rest, whether
+    /// the world data has those items at all.
+    /// </summary>
+    private static void Crafts(
+        StringBuilder sb,
+        VtankDatabase ours,
+        VtankDatabase theirs,
+        IReadOnlyCollection<string>? worldItemNames,
+        IReadOnlyCollection<string>? worldRecipeResults)
+    {
+        static List<(RecipeMatcher.Recipe Recipe, int Skill, int Difficulty)> Read(VtankDatabase db) =>
+            (db.Find("CraftInteractions")?.Rows ?? [])
+                .Where(static r => r.Cells.Count >= 9)
+                .Select(static r => (new RecipeMatcher.Recipe(r.Cells[0].AsString(), r.Cells[1].AsString(), r.Cells[2].AsString()), r.Cells[6].AsInt(), r.Cells[7].AsInt()))
+                .ToList();
+        var a = Read(ours);
+        var b = Read(theirs);
+        var mine = a.Select(static x => x.Recipe).ToList();
+        var bySkill = a.GroupBy(static x => x.Recipe).ToDictionary(static g => g.Key, static g => g.First());
+        var kinds = new Dictionary<RecipeMatch, int>();
+        var variants = new List<string>();
+        var missing = new List<RecipeMatcher.Recipe>();
+        int skillEqual = 0, difficultyEqual = 0, theirsZero = 0, theirsTenthMore = 0;
+        var difficultyOther = new List<string>();
+        foreach ((RecipeMatcher.Recipe recipe, int skill, int difficulty) in b)
+        {
+            (RecipeMatch kind, RecipeMatcher.Recipe? ourRecipe) = RecipeMatcher.Find(recipe, mine);
+            kinds[kind] = kinds.GetValueOrDefault(kind) + 1;
+            if (ourRecipe is not { } match)
+            {
+                missing.Add(recipe);
+                continue;
+            }
+            if (kind == RecipeMatch.Variant)
+                variants.Add($"{recipe.Use} + {recipe.On} -> {recipe.Result}  ~  {match.Use} + {match.On} -> {match.Result}");
+            (_, int ourSkill, int ourDifficulty) = bySkill[match];
+            if (ourSkill == skill)
+                skillEqual++;
+            if (ourDifficulty == difficulty)
+                difficultyEqual++;
+            else if (difficulty == 0)
+                theirsZero++;
+            else if (difficulty == (int)Math.Round(ourDifficulty * 1.1, MidpointRounding.AwayFromZero))
+                theirsTenthMore++;
+            else
+                difficultyOther.Add(string.Create(CultureInfo.InvariantCulture, $"{recipe.Result} {ourDifficulty}/{difficulty}"));
+        }
+        int found = b.Count - missing.Count;
+        sb.AppendLine("## CraftInteractions");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- rows: ours {a.Count}, theirs {b.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- theirs found in ours: {found} of {b.Count} (same order {kinds.GetValueOrDefault(RecipeMatch.Exact)}, items the other way round {kinds.GetValueOrDefault(RecipeMatch.Swapped)}, names worded differently {kinds.GetValueOrDefault(RecipeMatch.Variant)}); not found {missing.Count}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- of those found: same skill {skillEqual}; difficulty equal {difficultyEqual}, theirs 0 {theirsZero}, theirs ours x 1.1 {theirsTenthMore}, other {difficultyOther.Count}");
+        Examples(sb, "worded differently (theirs ~ ours)", variants);
+        Examples(sb, "difficulty differs otherwise (ours/theirs)", difficultyOther);
+        if (worldItemNames is null)
+        {
+            Examples(sb, "not found", missing.Select(static r => $"{r.Use} + {r.On} -> {r.Result}"));
+        }
+        else
+        {
+            string Why(RecipeMatcher.Recipe r)
+            {
+                string[] unknown = new[] { r.Use, r.On, r.Result }
+                    .Where(n => !worldItemNames.Any(w => RecipeMatcher.SameItem(w, n)))
+                    .ToArray();
+                if (unknown.Length > 0)
+                    return "the world data has no item " + string.Join(", ", unknown);
+                return worldRecipeResults is not null && !worldRecipeResults.Any(w => RecipeMatcher.SameItem(w, r.Result))
+                    ? "no recipe in the world data makes " + r.Result
+                    : "the world data makes " + r.Result + " another way";
+            }
+            Examples(sb, "not found, and why", missing.Select(r => $"{r.Use} + {r.On} -> {r.Result} [{Why(r)}]"));
+        }
         sb.AppendLine();
     }
 

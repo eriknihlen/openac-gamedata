@@ -1,4 +1,4 @@
-# openac-gamedata
+| `compare <ours.ugd> <other.ugd> [--input <dump>]` | report where two game databases agree and differ; recipes are matched whatever the item order or wording (plurals, "&", a more specific item); with `--input`, weigh each differing monster pick by ACE's damage numbers and say why a recipe is not found |# openac-gamedata
 
 Generates a VTank-format game database, `gameinfodb.ugd`, from the open ACE
 world database. The MossTank plugin for the OpenAC client reads this file to
@@ -114,6 +114,11 @@ sha256, published).
   craft succeeds half the time. The row id is the cook-book entry's id. Recipes
   that only change the target (tinkering, dyeing) make nothing new and are
   left out.
+  VTank itself never reads the `ReqDiff` column (it only checks that the
+  recipe's skill is trained); its own built-in fletching table carries these
+  same numbers, with a setting (default 10) for how far above them to craft.
+  VTank's online database leaves most of the column at 0 and a few hand-entered
+  fletching rows at 1.1 times these values; they are not used.
 
 ## Checking the output
 

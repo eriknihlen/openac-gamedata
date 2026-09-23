@@ -94,16 +94,25 @@ internal static class Program
         VtankDatabase a = VtankDatabase.Parse(File.ReadAllText(ours));
         VtankDatabase b = VtankDatabase.Parse(File.ReadAllText(theirs));
         Func<string, IReadOnlyDictionary<int, double>?>? damageTaken = null;
+        IReadOnlyCollection<string>? itemNames = null;
+        IReadOnlyCollection<string>? recipeResults = null;
         if (options.TryGetValue("input", out string? input))
         {
-            Dictionary<string, IReadOnlyDictionary<int, double>> byName = MonsterTables.Monsters(AceWorld.Load(input))
+            AceWorld world = AceWorld.Load(input);
+            itemNames = world.Weenies.Values.Select(static w => w.Name).OfType<string>().Distinct().ToArray();
+            recipeResults = world.Sources.Recipes.Values
+                .Select(r => world.Weenies.TryGetValue(r.SuccessClassId, out AceWeenie? made) ? made.Name : null)
+                .OfType<string>()
+                .Distinct()
+                .ToArray();
+            Dictionary<string, IReadOnlyDictionary<int, double>> byName = MonsterTables.Monsters(world)
                 .ToDictionary(
                     static m => m.Name,
                     static m => (IReadOnlyDictionary<int, double>)m.Damage.ToDictionary(static p => (int)p.Key, static p => p.Value),
                     StringComparer.OrdinalIgnoreCase);
             damageTaken = name => byName.GetValueOrDefault(name);
         }
-        Console.Write(GameInfoComparison.Report(a, b, damageTaken));
+        Console.Write(GameInfoComparison.Report(a, b, damageTaken, itemNames, recipeResults));
         return 0;
     }
 
